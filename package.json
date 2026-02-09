@@ -1,0 +1,16 @@
+{
+  "name": "gemini-live-twilio-voice",
+  "version": "1.0.0",
+  "description": "Gemini Live API + Twilio Voice (browser VoIP + outbound phone calls)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@twilio/voice-sdk": "^2.18.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "twilio": "^5.4.3",
+    "ws": "^8.18.0"
+  }
+}

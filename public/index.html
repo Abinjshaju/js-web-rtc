@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice AI Agent</title>
+  <script src="/twilio.min.js"></script>
+</head>
+<body>
+
+  <h1>Voice AI Agent</h1>
+  <p id="status">Status: initializing...</p>
+  <hr>
+
+  <h2>Browser VoIP</h2>
+  <p>Talk to the AI directly from your browser.</p>
+  <button id="btn-talk" disabled onclick="startBrowserCall()">Talk to AI</button>
+  <button id="btn-hangup" disabled onclick="hangUp()">Hang Up</button>
+  <p id="voip-status"></p>
+  <hr>
+
+  <h2>Outbound Phone Call</h2>
+  <p>Enter a phone number to have the AI call it.</p>
+  <label for="phone-number">Phone number:</label>
+  <input type="tel" id="phone-number" placeholder="+1234567890">
+  <button id="btn-call" onclick="callPhone()">Call Phone</button>
+  <p id="call-status"></p>
+  <hr>
+
+  <h3>Log</h3>
+  <pre id="log"></pre>
+
+  <script>
+    let device = null;
+    let activeCall = null;
+
+    const statusEl = document.getElementById('status');
+    const voipStatusEl = document.getElementById('voip-status');
+    const callStatusEl = document.getElementById('call-status');
+    const logEl = document.getElementById('log');
+    const btnTalk = document.getElementById('btn-talk');
+    const btnHangup = document.getElementById('btn-hangup');
+
+    function log(msg) {
+      const ts = new Date().toLocaleTimeString();
+      logEl.textContent += `[${ts}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+
+    // ── Initialize Twilio Device ──────────────────────────────────────────
+
+    async function initDevice() {
+      try {
+        log('Fetching access token...');
+        const resp = await fetch('/token');
+        const data = await resp.json();
+
+        device = new Twilio.Device(data.token, {
+          logLevel: 1,
+          codecPreferences: ['opus', 'pcmu'],
+        });
+
+        device.on('registered', () => {
+          log('Twilio Device registered and ready');
+          statusEl.textContent = 'Status: ready';
+          btnTalk.disabled = false;
+        });
+
+        device.on('error', (err) => {
+          log('Device error: ' + err.message);
+          statusEl.textContent = 'Status: error';
+        });
+
+        device.on('tokenWillExpire', async () => {
+          log('Token expiring, fetching new token...');
+          const resp = await fetch('/token');
+          const data = await resp.json();
+          device.updateToken(data.token);
+          log('Token updated');
+        });
+
+        await device.register();
+        log('Twilio Device registered');
+        statusEl.textContent = 'Status: ready';
+        btnTalk.disabled = false;
+      } catch (err) {
+        log('Init error: ' + err.message);
+        statusEl.textContent = 'Status: init failed - ' + err.message;
+      }
+    }
+
+    // ── Browser VoIP ──────────────────────────────────────────────────────
+
+    async function startBrowserCall() {
+      if (!device) {
+        log('Device not ready');
+        return;
+      }
+      log('Starting browser call...');
+      voipStatusEl.textContent = 'Connecting...';
+      btnTalk.disabled = true;
+
+      try {
+        activeCall = await device.connect();
+
+        activeCall.on('accept', () => {
+          log('Call accepted');
+          voipStatusEl.textContent = 'Connected to AI - speak now';
+          btnHangup.disabled = false;
+        });
+
+        activeCall.on('disconnect', () => {
+          log('Call disconnected');
+          voipStatusEl.textContent = 'Disconnected';
+          btnTalk.disabled = false;
+          btnHangup.disabled = true;
+          activeCall = null;
+        });
+
+        activeCall.on('cancel', () => {
+          log('Call cancelled');
+          voipStatusEl.textContent = '';
+          btnTalk.disabled = false;
+          btnHangup.disabled = true;
+          activeCall = null;
+        });
+
+        activeCall.on('error', (err) => {
+          log('Call error: ' + err.message);
+          voipStatusEl.textContent = 'Error: ' + err.message;
+          btnTalk.disabled = false;
+          btnHangup.disabled = true;
+        });
+      } catch (err) {
+        log('Connect error: ' + err.message);
+        voipStatusEl.textContent = 'Failed: ' + err.message;
+        btnTalk.disabled = false;
+      }
+    }
+
+    function hangUp() {
+      if (activeCall) {
+        activeCall.disconnect();
+        activeCall = null;
+      }
+      if (device) {
+        device.disconnectAll();
+      }
+      voipStatusEl.textContent = 'Hung up';
+      btnTalk.disabled = false;
+      btnHangup.disabled = true;
+    }
+
+    // ── Outbound Phone Call ───────────────────────────────────────────────
+
+    async function callPhone() {
+      const phoneNumber = document.getElementById('phone-number').value.trim();
+      if (!phoneNumber) {
+        alert('Please enter a phone number');
+        return;
+      }
+
+      callStatusEl.textContent = 'Initiating call...';
+      log('Calling ' + phoneNumber + '...');
+
+      try {
+        const resp = await fetch('/call', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneNumber }),
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+          callStatusEl.textContent = 'Error: ' + data.error;
+          log('Call error: ' + data.error);
+        } else {
+          callStatusEl.textContent = 'Call initiated. SID: ' + data.callSid;
+          log('Call SID: ' + data.callSid);
+        }
+      } catch (err) {
+        callStatusEl.textContent = 'Error: ' + err.message;
+        log('Call error: ' + err.message);
+      }
+    }
+
+    // ── Boot ──────────────────────────────────────────────────────────────
+
+    initDevice();
+  </script>
+</body>
+</html>
